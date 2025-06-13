@@ -6,7 +6,7 @@ import os
 from datasets import Dataset
 
 
-def create_dataset(data_dir, repeat_count, output_name, default_tag):
+def create_dataset(data_dir, output_name, default_tag):
     # Formats supported by torchaudio
     extensions = {
         ".aac",
@@ -52,7 +52,7 @@ def create_dataset(data_dir, repeat_count, output_name, default_tag):
         all_examples.append(example)
 
     # repeat specified times
-    ds = Dataset.from_list(all_examples * repeat_count)
+    ds = Dataset.from_list(all_examples)
     ds.save_to_disk(output_name)
 
 
@@ -63,12 +63,6 @@ def main():
         type=str,
         default=r"C:\data\audio",
         help="Directory containing the audio files.",
-    )
-    parser.add_argument(
-        "--repeat_count",
-        type=int,
-        default=1,
-        help="Number of times to repeat the dataset.",
     )
     parser.add_argument(
         "--output_name",
@@ -86,7 +80,6 @@ def main():
 
     create_dataset(
         data_dir=args.data_dir,
-        repeat_count=args.repeat_count,
         output_name=args.output_name,
         default_tag=args.default_tag,
     )

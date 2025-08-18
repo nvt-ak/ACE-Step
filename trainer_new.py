@@ -201,7 +201,10 @@ class Pipeline(LightningModule):
         for module in self.transformer.projectors:
             module.forward = torch.compile(module.forward, dynamic=True)
         self.transformer.encode = torch.compile(self.transformer.encode, dynamic=True)
-        self.text_encoder_model = torch.compile(self.text_encoder_model, dynamic=True)
+        if torch.cuda.is_bf16_supported():
+            # Compiling this causes issue when bf16 is not supported
+            # see https://github.com/woct0rdho/ACE-Step/issues/16
+            self.text_encoder_model = torch.compile(self.text_encoder_model, dynamic=True)
 
     def get_scheduler(self):
         return FlowMatchEulerDiscreteScheduler(

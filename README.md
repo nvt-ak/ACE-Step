@@ -121,3 +121,4 @@ I've trained some LoRAs at https://huggingface.co/woctordho/ACE-Step-v1-LoRA-col
     * The statistics of the tags used to train the base model is shared on [Discord](https://discord.com/channels/1369256267645849741/1372633881215500429/1374037211145830442)
 * When an audio is cropped because it's too long, also crop the lyrics
 * I would not include BPM in the AI-generated tags, because it's much more accurate to detect BPM using traditional methods than AI. Also, to control the BPM of the generated audio, I guess it's more adhesive to use a control net than the prompt, similar to the Canny control net for images.
+* Use [prodigy-plus-schedule-free](https://github.com/LoganBooker/prodigy-plus-schedule-free)

@@ -47,7 +47,7 @@ I've trained some LoRAs at https://huggingface.co/woctordho/ACE-Step-v1-LoRA-col
     It seems Qwen2.5-Omni-7B works well for Chinese lyrics, but not so well for English and other languages.
     </details>
 
-    Besides using an AI model to transcribe lyrics, you can also extract lyrics embedded in the audio file, or query online databases such as [163MusicLyrics](https://github.com/jitwxs/163MusicLyrics), [LyricsGenius](https://github.com/johnwmillr/LyricsGenius), [LyricWiki](https://archive.org/details/lyricsfandomcom-20200216-patched.7z). You may try [ace-data_tool](https://github.com/methmx83/ace-data_tool).
+    Besides using an AI model to transcribe lyrics, you can also extract lyrics embedded in the audio file, or query online databases such as [163MusicLyrics](https://github.com/jitwxs/163MusicLyrics), [LyricsGenius](https://github.com/johnwmillr/LyricsGenius), [LyricWiki](https://archive.org/details/lyricsfandomcom-20200216-patched.7z). You may try [Ace-Step Data Tool](https://github.com/methmx83/Ace-Step_Data-Tool).
 
     For music without vocal, just use `[instrumental]` for the lyrics.
 

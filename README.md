@@ -1,5 +1,7 @@
 # [ACE-Step](https://github.com/ace-step/ACE-Step) fork
 
+This is for ACE-Step v1.0 . There will be more mature trainers for ACE-Step v1.5 .
+
 ## Progress
 
 * Separate data preprocessing (music and text encoding) and training

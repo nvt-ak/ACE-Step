@@ -6,7 +6,7 @@ import os
 from io import BytesIO
 
 import requests
-import torchaudio
+import soundfile as sf
 
 from generate_prompts_lyrics import (
     PROMPT,
@@ -20,7 +20,9 @@ def inference(file_path, host, port, do_lyrics, temperature):
     audio, sr = read_audio(file_path)
 
     buffer = BytesIO()
-    torchaudio.save(buffer, audio, sample_rate=sr, format="wav")
+    # Plain WAV write via soundfile (libsndfile), not torchaudio/torchcodec -
+    # avoids the FFmpeg DLL dependency entirely for this step too.
+    sf.write(buffer, audio.squeeze(0).numpy(), samplerate=sr, format="WAV")
     audio = base64.b64encode(buffer.getvalue()).decode("utf-8")
     del buffer
 
@@ -58,8 +60,19 @@ def inference(file_path, host, port, do_lyrics, temperature):
 
     url = f"http://{host}:{port}/v1/chat/completions"
     headers = {"Content-Type": "application/json"}
-    response = requests.post(url, json=payload, headers=headers)
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=300)
+    except requests.exceptions.ConnectionError as e:
+        raise RuntimeError(
+            f"Could not connect to llama-server at {url}. "
+            "Is it running? (see README: `llama-server -m ... --mmproj ...`)"
+        ) from e
+
     content = response.json()
+    if "choices" not in content:
+        raise RuntimeError(
+            f"llama-server returned an unexpected response (HTTP {response.status_code}): {content}"
+        )
     content = content["choices"][0]["message"]["content"]
     return content
 

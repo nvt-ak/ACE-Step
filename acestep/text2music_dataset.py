@@ -6,7 +6,7 @@ from datasets import load_from_disk
 from loguru import logger
 import time
 import traceback
-import torchaudio
+import av
 from pathlib import Path
 import re
 from acestep.language_segmentation import LangSegment
@@ -298,8 +298,35 @@ class Text2MusicDataset(Dataset):
             torch.Tensor or None: Processed audio tensor
         """
         filename = item["filename"]
+        sr = 48000
         try:
-            audio, sr = torchaudio.load(filename)
+            # Decode with PyAV instead of torchaudio/torchcodec. PyAV ships its
+            # own statically-linked FFmpeg inside the wheel, so it works
+            # without needing a system FFmpeg install or Windows DLL/PATH
+            # resolution (which torchcodec struggles with).
+            container = av.open(filename)
+            try:
+                stream = container.streams.audio[0]
+                resampler = av.audio.resampler.AudioResampler(
+                    format="s16p", layout="stereo", rate=sr
+                )
+                chunks = []
+                for frame in container.decode(stream):
+                    resampled = resampler.resample(frame)
+                    if resampled is None:
+                        resampled = []
+                    elif not isinstance(resampled, list):
+                        resampled = [resampled]
+                    for rframe in resampled:
+                        chunks.append(rframe.to_ndarray())
+            finally:
+                container.close()
+
+            if not chunks:
+                raise RuntimeError("no audio frames decoded")
+
+            audio_np = np.concatenate(chunks, axis=-1).astype(np.float32) / 32768.0
+            audio = torch.from_numpy(audio_np)
         except Exception as e:
             logger.error(f"Failed to load audio {item}: {e}")
             return None
@@ -322,16 +349,15 @@ class Text2MusicDataset(Dataset):
                 audio, (0, sr * min_duration - audio.shape[-1]), "constant", 0
             )
 
-        # Convert mono to stereo if needed
+        # Convert mono to stereo if needed (safety net; resampler above
+        # already requests stereo output)
         if audio.shape[0] == 1:
             audio = torch.cat([audio, audio], dim=0)
 
         # Take first two channels if more than stereo
         audio = audio[:2]
 
-        # Resample if needed
-        if sr != 48000:
-            audio = torchaudio.functional.resample(audio, sr, 48000)
+        # Already resampled to 48000 by the AudioResampler above.
 
         # Clip values to [-1.0, 1.0]
         audio = torch.clamp(audio, -1.0, 1.0)
@@ -552,7 +578,7 @@ class Text2MusicDataset(Dataset):
 
         return output
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx, _tried=None):
         """
         Get item at index with error handling
 
@@ -568,11 +594,22 @@ class Text2MusicDataset(Dataset):
                 raise Exception(f"Empty example {idx=}")
             return example
         except Exception as e:
-            # Log error and try a different random index
+            # Log error and try a different random index, but only up to
+            # len(self) attempts - with a small (or single-item) dataset,
+            # unconditionally recursing here would either loop forever on
+            # the same broken index or blow the call stack.
             logger.error(f"Error in getting item {idx}: {e}")
             traceback.print_exc()
-            new_idx = random.choice(range(len(self)))
-            return self.__getitem__(new_idx)
+            _tried = (_tried or set()) | {idx}
+            remaining = [i for i in range(len(self)) if i not in _tried]
+            if not remaining:
+                raise RuntimeError(
+                    f"All {len(self)} example(s) in the dataset failed to load; "
+                    f"see the errors above for the actual cause (e.g. missing/unreadable "
+                    f"audio file, empty lyrics, etc)."
+                ) from e
+            new_idx = random.choice(remaining)
+            return self.__getitem__(new_idx, _tried=_tried)
 
 
 if __name__ == "__main__":

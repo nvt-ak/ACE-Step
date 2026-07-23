@@ -35,6 +35,24 @@ if torch.cuda.is_bf16_supported():
 torch.backends.cudnn.benchmark = True
 # torch._dynamo.config.recompile_limit = 64
 
+# torch.compile's default (inductor) backend needs a working Triton install,
+# which isn't reliably available on Windows. It's a speed optimization, not
+# a correctness requirement, so only opt in when Triton is actually
+# importable - otherwise stay in eager mode instead of crashing training
+# with TritonMissing.
+try:
+    import triton  # noqa: F401
+
+    HAS_TRITON = True
+except ImportError:
+    HAS_TRITON = False
+
+
+def maybe_compile(fn, **kwargs):
+    if not HAS_TRITON:
+        return fn
+    return torch.compile(fn, **kwargs)
+
 
 def augment_tags(text_token_ids, mask, shuffle, dropout):
     if not shuffle and not dropout:
@@ -198,13 +216,15 @@ class Pipeline(LightningModule):
             }
             self.transformer.load_state_dict(state_dict, strict=False)
 
+        if not HAS_TRITON:
+            print("Triton not available; running transformer/text-encoder in eager mode (no torch.compile).")
         for module in self.transformer.projectors:
-            module.forward = torch.compile(module.forward, dynamic=True)
-        self.transformer.encode = torch.compile(self.transformer.encode, dynamic=True)
+            module.forward = maybe_compile(module.forward, dynamic=True)
+        self.transformer.encode = maybe_compile(self.transformer.encode, dynamic=True)
         if torch.cuda.is_bf16_supported():
             # Compiling this causes issue when bf16 is not supported
             # see https://github.com/woct0rdho/ACE-Step/issues/16
-            self.text_encoder_model = torch.compile(self.text_encoder_model, dynamic=True)
+            self.text_encoder_model = maybe_compile(self.text_encoder_model, dynamic=True)
 
     def get_scheduler(self):
         return FlowMatchEulerDiscreteScheduler(
@@ -530,7 +550,7 @@ if __name__ == "__main__":
     # Data
     args.add_argument("--dataset_path", type=str, default=r"C:\data\audio_prep")
     args.add_argument("--batch_size", type=int, default=1)
-    args.add_argument("--num_workers", type=int, default=0)
+    args.add_argument("--num_workers", type=int, default=11)
     args.add_argument("--tag_dropout", type=float, default=0.5)
     args.add_argument("--speaker_dropout", type=float, default=0.0)
     args.add_argument("--lyrics_dropout", type=float, default=0.0)

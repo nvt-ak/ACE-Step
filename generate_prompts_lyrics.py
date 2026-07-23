@@ -4,8 +4,9 @@ import argparse
 import json
 import os
 
+import av
+import numpy as np
 import torch
-import torchaudio
 from gptqmodel import GPTQModel
 from gptqmodel.models.auto import MODEL_MAP, SUPPORTED_MODELS
 from gptqmodel.models.base import BaseGPTQModel
@@ -129,7 +130,11 @@ def load_model(model_path: str):
         model_path,
         device_map=device_map,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        # flash_attention_2 requires the flash_attn package, which has no
+        # official prebuilt wheel for Windows (needs building from source
+        # against a matching CUDA/MSVC toolchain). sdpa is PyTorch's built-in
+        # attention backend - no extra install, and fast on recent GPUs.
+        attn_implementation="sdpa",
     )
     model.disable_talker()
 
@@ -138,12 +143,39 @@ def load_model(model_path: str):
 
 
 def read_audio(file_path):
-    audio, sr = torchaudio.load(file_path)
-    audio = audio[:, : sr * 360]
-    if sr != QWEN_SAMPLE_RATE:
-        audio = torchaudio.functional.resample(audio, sr, QWEN_SAMPLE_RATE)
-        sr = QWEN_SAMPLE_RATE
-    audio = audio.mean(dim=0, keepdim=True)
+    # Decode with PyAV instead of torchaudio/torchcodec. PyAV ships its own
+    # statically-linked FFmpeg inside the wheel, so it works without needing
+    # a system FFmpeg install or fighting Windows DLL/PATH resolution.
+    sr = QWEN_SAMPLE_RATE
+    max_samples = sr * 360
+
+    container = av.open(file_path)
+    try:
+        stream = container.streams.audio[0]
+        resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=sr)
+
+        chunks = []
+        total_samples = 0
+        for frame in container.decode(stream):
+            resampled = resampler.resample(frame)
+            if resampled is None:
+                resampled = []
+            elif not isinstance(resampled, list):
+                resampled = [resampled]
+            for rframe in resampled:
+                arr = rframe.to_ndarray()
+                chunks.append(arr)
+                total_samples += arr.shape[-1]
+            if total_samples >= max_samples:
+                break
+    finally:
+        container.close()
+
+    if not chunks:
+        raise RuntimeError(f"Could not decode any audio from {file_path}")
+
+    audio_np = np.concatenate(chunks, axis=-1)[:, :max_samples].astype(np.float32) / 32768.0
+    audio = torch.from_numpy(audio_np)
     return audio, sr
 
 

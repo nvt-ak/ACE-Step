@@ -12,7 +12,7 @@ torch
 torchaudio
 torchvision
 tqdm
-transformers==4.50.0
+transformers==4.52.3
 py3langid==0.3.0
 hangul-romanize==0.1.0
 num2words==0.5.14
@@ -25,6 +25,7 @@ peft
 tensorboard
 tensorboardX
 
+av
 gptqmodel==2.2.0
 h5py==3.13.0
 hdf5plugin==5.1.0

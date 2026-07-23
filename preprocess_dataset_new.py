@@ -38,7 +38,22 @@ class Preprocessor(torch.nn.Module):
         acestep_pipeline = ACEStepPipeline(checkpoint_dir)
         acestep_pipeline.load_checkpoint(acestep_pipeline.checkpoint_dir)
         self.dcae = acestep_pipeline.music_dcae
-        self.dcae.dcae.encoder = torch.compile(self.dcae.dcae.encoder, dynamic=True)
+        # torch.compile's default backend needs a working Triton install,
+        # which isn't reliably available on Windows. It's a speed
+        # optimization here, not a correctness requirement, so only opt in
+        # when Triton is actually importable - otherwise stay in eager mode
+        # rather than crashing mid-preprocessing with TritonMissing.
+        try:
+            import triton  # noqa: F401
+
+            has_triton = True
+        except ImportError:
+            has_triton = False
+
+        if has_triton:
+            self.dcae.dcae.encoder = torch.compile(self.dcae.dcae.encoder, dynamic=True)
+        else:
+            print("Triton not available; running DCAE encoder in eager mode (no torch.compile).")
         self.text_tokenizer = acestep_pipeline.text_tokenizer
         del acestep_pipeline
 
